@@ -1,0 +1,39 @@
+# ======================================================================================================== #
+# ======================================================================================================== #
+#                                           SIMULATION INPUT                                               #
+# ======================================================================================================== #
+# ======================================================================================================== #
+
+# ======================================================================================================== #
+#  When the test mode is set to "true", the integration is run with the background opacity at the          #
+#  given λ (nm). A convenient quick test, without going into the whole atom routine.                       #
+# ======================================================================================================== #
+test_mode = false
+background_wavelength = 500.0
+
+# ======================================================================================================== #
+#  Paths to atmosphere and atom data, as well as the initial atom populations.                             #
+#  bifrost_cb24bih_s385_fullv.ncdf                                                                         #
+# ======================================================================================================== #
+atmosphere_path           = "/mn/stornext/u3/idarhan/basement/MScProject/Atmospheres/bifrost_qs006023_s525_quarter_reworked.hdf5"
+atom_path                 = "/mn/stornext/u3/idarhan/MScProject/SolarMCRT/run/atoms/H_2lvl.h5"
+initial_populations_path  = "/mn/stornext/u3/idarhan/MScProject/SolarMCRT/run/atoms/H_2lvl_LTE_populations.hdf5"
+
+# ======================================================================================================== #
+#  Choose how many wavelengths to sample for the bound-bound and bound-free transitions.                   #
+#  If an even # is given for the bound-bound, an additional wavelength will be added by default.           #
+# ======================================================================================================== #
+nλ_bb = 10
+nλ_bf = 5
+
+# ======================================================================================================== #
+# Option to cut and slice the atmosphere data in all dimensions [nz, nx, ny].                              #
+# ======================================================================================================== #
+start = [1, 1, 1]
+stop = [end, end, end]
+step = [1, 1, 1]
+
+# ======================================================================================================== #
+#  Maximum number of population iterations before quitting.                                                #
+# ======================================================================================================== #
+max_iterations = 10
