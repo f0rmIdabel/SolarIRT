@@ -7,6 +7,7 @@ using BenchmarkTools
 using ProgressMeter
 using Transparency
 using StaticArrays
+using LinearAlgebra
 using Unitful
 using Random
 using Printf
@@ -115,6 +116,7 @@ function get_cut_off()
     return cut_off
 end
 
+
 function get_atmosphere_path()
     input_file = open(f->read(f, String), "../run/keywords.input")
     i = findfirst("atmosphere_path", input_file)[end] + 1
@@ -145,25 +147,7 @@ function get_initial_populations_path()
     return initial_populations_path
 end
 
-function get_target_packets()
-    input_file = open(f->read(f, String), "../run/keywords.input")
-    i = findfirst("target_packets", input_file)[end] + 1
-    file = input_file[i:end]
-    i = findfirst("=", file)[end] + 1
-    j = findfirst("\n", file)[end] - 1
-    target_packets = parse(Float64, file[i:j])
-    return target_packets
-end
 
-function get_max_scatterings()
-    input_file = open(f->read(f, String), "../run/keywords.input")
-    i = findfirst("max_scatterings", input_file)[end] + 1
-    file = input_file[i:end]
-    i = findfirst("=", file)[end] + 1
-    j = findfirst("\n", file)[end] - 1
-    max_scatterings = parse(Float64, file[i:j])
-    return max_scatterings
-end
 
 function get_max_iterations()
     input_file = open(f->read(f, String), "../run/keywords.input")

@@ -1,4 +1,3 @@
-#include("atom.jl")
 include("rates.jl")
 
 function collect_initial_populations()
