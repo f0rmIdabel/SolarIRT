@@ -33,6 +33,18 @@ function test_mode()
     return tm
 end
 
+function iteration_mode()
+    input_file = open(f->read(f, String), "../run/keywords.input")
+    i = findfirst("iteration_mode", input_file)[end] + 1
+    file = input_file[i:end]
+    i = findfirst("=", file)[end]
+    j = findfirst("\n", file[i+1:end])[end] + i
+    im = strip(file[i+1:j-1])
+    return im
+end
+
+println(iteration_mode())
+
 function get_nλ()
     input_file = open(f->read(f, String), "../run/keywords.input")
     i = findfirst("nλ_bb", input_file)[end] + 1

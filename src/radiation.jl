@@ -45,7 +45,7 @@ function collect_radiation_data(atmosphere::Atmosphere,
     # ==================================================================
     # PLANCK FUNCTION
     # ==================================================================
-    Bλ[1,:,:,:] = blackbody_lambda.(λ[1], temperature)
+    B[1,:,:,:] = blackbody_lambda.(λ[1], temperature)
 
     return λ, α, B
 end
@@ -83,9 +83,7 @@ function collect_radiation_data(atmosphere::Atmosphere,
     # ==================================================================
     # INITIALISE VARIABLES
     # ==================================================================
-    boundary = Array{Int32,3}(undef, nλ, nx, ny)
-    packets = Array{Int32,4}(undef, nλ, nz, nx, ny)
-    intensity_per_packet =  Array{UnitsIntensity_λ, 1}(undef, nλ)
+    B = Array{UnitsIntensity_λ, 4}(undef, nλ, nz, nx, ny)
 
     # ==================================================================
     # EXTINCTION AND DESTRUCTION PROBABILITY FOR EACH WAVELENGTH
@@ -93,7 +91,11 @@ function collect_radiation_data(atmosphere::Atmosphere,
     α_continuum = continuum_extinction(atmosphere, atom, populations, λ)
     α_line_constant = line_extinction_constant.(Ref(line), populations[:,:,:,1], populations[:,:,:,2])
 
-    return α_continuum, α_line_constant
+    for l=1:nλ
+        B[l,:,:,:] = blackbody_lambda.(λ[l], temperature)
+    end
+
+    return α_continuum, α_line_constant, B
 end
 
 function continuum_extinction(atmosphere::Atmosphere,

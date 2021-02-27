@@ -268,13 +268,13 @@ function lambda_iteration(atmosphere::Atmosphere, atom::Atom, radiation::Radiati
     # ==================================================================
     # WRITE TO FILE
     # ==================================================================
-    out = h5open("../../out/output.h5", "w")
+    h5open("../out/output.h5", "w") do file
         write(file, "J", ustrip(J))
         write(file, "time", time)
     end
 end
 
-function feautrier(atmosphere, S, α, z)
+function feautrier(atmosphere, atom, radiation)
     # ===================================================================
     # LOAD ANGLES
     # ===================================================================
@@ -287,7 +287,6 @@ function feautrier(atmosphere, S, α, z)
     # ==================================================================
     x = atmosphere.x
     z = atmosphere.z
-    temperature = atmosphere.temperature
     pixel_size = abs(x[2] - x[1])
 
     # ==================================================================
@@ -321,6 +320,9 @@ function feautrier(atmosphere, S, α, z)
         fill!(p, 0.0u"kW / m^2 / sr / nm")
         fill!(P, 0.0u"kW / m^2 / sr / nm")
         fill!(J, 0.0u"kW / m^2 / sr / nm")
+
+        S = B[l,:,:,:]
+        α = α[l,:,:,:]
 
         for m=1:nμ
 
@@ -442,7 +444,7 @@ function forward(D::Array{Float64, 3},
             #forward
             for k=2:length(Δτ)
                 A = 2μ^2 / (Δτ[k-1]*(Δτ[k-1] + Δτ[k]))
-                B = 1.0 + 2μ^2 / (Δτ[k]*Δτ[k-1])            #should use steins trick here
+                B = 1.0 + 2μ^2 / (Δτ[k]*Δτ[k-1])        #should use steins trick here
                 C = 2μ^2 /(Δτ[k]*(Δτ[k-1] + Δτ[k]))
 
                 D[k,i,j] = C / (B - A*D[k-1,i,j])
