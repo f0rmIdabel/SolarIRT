@@ -47,6 +47,93 @@ function collect_radiation_data(atmosphere::Atmosphere,
     # ==================================================================
     B[1,:,:,:] = blackbody_lambda.(λ[1], temperature)
 
+
+    for m=1:nμ
+
+        # ϕ = 0
+        #########################################
+        S_ = copy(S)
+        α_ = copy(α)
+        S[m,1] = shift_variable!(S_, z[1:end-1], pixel_size, μ[m])
+        α[m,1] = shift_variable!(α_, z[1:end-1], pixel_size, μ[m])
+
+
+        # ϕ = π
+        #########################################
+        S_ = copy(S)
+        α_ = copy(α)
+
+        S_ = reverse(S_, dims = 2)
+        S_ = reverse(S_, dims = 3)
+        α_ = reverse(α_, dims = 2)
+        α_ = reverse(α_, dims = 3)
+
+        shift_variable!(S_, z[1:end-1], pixel_size, μ[m])
+        shift_variable!(α_, z[1:end-1], pixel_size, μ[m])
+        α_ /= μ[m]
+        S_ /= μ[m]
+
+        τ = optical_depth(α_, z)
+        p[end,:,:] = forward(D, E, S_, τ, μ[m])
+        backward(p, D, E)
+        p = reverse(p, dims = 2)
+        p = reverse(p, dims = 3)
+        P += p
+
+        # ϕ = 3π/2
+        #########################################
+        S_ = copy(S)
+        α_ = copy(α)
+
+        S_ = permutedims(S_, [1,3,2])
+        S_ = reverse(S_, dims = 3)
+        α_ = permutedims(α_, [1,3,2])
+        α_ = reverse(α_, dims = 3)
+
+        shift_variable!(S_, z[1:end-1], pixel_size, μ[m])
+        shift_variable!(α_, z[1:end-1], pixel_size, μ[m])
+        α_ /= μ[m]
+        S_ /= μ[m]
+
+        τ = optical_depth(α_, z)
+        p[end,:,:] = forward(D, E, S_, τ, μ[m])
+        backward(p, D, E)
+        p = permutedims(p, [1,3,2])
+        p = reverse(p, dims = 3)
+        P += p
+
+        # ϕ = π/2
+        ############################################
+        S_ = copy(S)
+        α_ = copy(α)
+
+        S_ = permutedims(S_, [1,3,2])
+        S_ = reverse(S_, dims = 2)
+        α_ = permutedims(α_, [1,3,2])
+        α_ = reverse(α_, dims = 2)
+
+        shift_variable!(S_, z[1:end-1], pixel_size, μ[m])
+        shift_variable!(α_, z[1:end-1], pixel_size, μ[m])
+        α_ /= μ[m]
+        S_ /= μ[m]
+
+        τ = optical_depth(α_, z)
+        p[end,:,:] = forward(D, E, S_, τ, μ[m])
+        backward(p, D, E)
+        reverse(p, dims = 2)
+        p = permutedims(p, [1,3,2])
+        p = reverse(p, dims = 2)
+        P += p
+
+        # Shift back μ
+        ################################################
+        shift_variable!(P, z[1:end-1], pixel_size, -μ[m])
+        shift_variable!(P, z[1:end-1], pixel_size, -1.0)
+
+        # Add to J
+        J = J .+ w[m]*P/nφ
+    end
+
     return λ, α, B
 end
 
@@ -98,14 +185,193 @@ function collect_radiation_data(atmosphere::Atmosphere,
     return α_continuum, α_line_constant, B
 end
 
-function continuum_extinction(atmosphere::Atmosphere,
-                              atom::Atom,
-                              atom_populations::Array{<:NumberDensity,4},
-                              λ::Array{<:Unitful.Length, 1})
+###########################3
+
+struct Radiation
+    α_continuum::Array{<:PerLength, 4}                   # (nλ, nz, nx, ny)
+    ε_continuum::Array{Float64,4}                        # (nλ, nz, nx, ny)
+    α_line_constant::Array{Float64, 3}
+    ε_line::Array{Float64,3}
+    S::Array{<:UnitsIntensity_λ,4}
+end
+
+struct RadiationBackground
+    λ::Array{<:Unitful.Length, 1}                        # (nλ)
+    α_continuum::Array{<:PerLength, 4}                   # (nλ, nz, nx, ny)
+    ε_continuum::Array{Float64,4}                        # (nλ, nz, nx, ny)
+    S::Array{<:UnitsIntensity_λ,4}
+end
+
+"""
+    collect_radiation_data(atmosphere::Atmosphere,
+                           λ::Unitful.Length,
+                           τ_max::Float64,
+                           target_packets::Float64)
+
+Collects radition data for background processes at a single wavelength
+Returns data to go into structure.
+"""
+function collect_radiation_data(atmosphere::Atmosphere,
+                                λ::Unitful.Length,
+                                nϕ::Int64,
+                                nμ::Int64)
+
+    # ==================================================================
+    # GET ATMOSPHERE DATA AND WAVELENGTH
+    # ==================================================================
+    temperature = atmosphere.temperature
+    electron_density = atmosphere.electron_density
+    hydrogen_populations = atmosphere.hydrogen_populations
+    nz, nx, ny = size(temperature)
+
+    λ = [λ]
+    # ==================================================================
+    # INITIALISE VARIABLES
+    # ==================================================================
+    α = Array{PerLength,4}(undef, 1, nϕ, nμ, nz, nx, ny)
+    ε = Array{Float64,4}(undef, 1,  nϕ, nμ, nz, nx, ny)
+
+    # ==================================================================
+    # EXTINCTION AND DESTRUCTION PROBABILITY FOR BACKGROUND PROCESSES
+    # ==================================================================
+    proton_density = hydrogen_populations[:,:,:,end]
+    hydrogen_ground_popuplation = hydrogen_populations[:,:,:,1]
+
+    α_continuum_abs = α_cont_abs.(λ, temperature, electron_density, hydrogen_ground_popuplation, proton_density)
+    α_continuum_scat = α_cont_scatt.(λ, electron_density, hydrogen_ground_popuplation)
+
+    α[1,:,:,:] = α_continuum_abs .+ α_continuum_scat
+    ε[1,:,:,:] = α_continuum_abs ./ α[1,:,:,:]
+
+
+    # ==================================================================
+    # CHECK FOR UNVALID VALUES
+    # ==================================================================
+    @test all(  Inf .> ustrip.(λ) .>= 0.0 )
+    @test all(  Inf .> ustrip.(α) .>= 0.0 )
+    @test all(  Inf .> ε .>= 0.0)
+
+    return λ, α, ε
+end
+
+"""
+    collect_radiation_data(atmosphere::Atmosphere,
+                           atom::Atom,
+                           rates::TransitionRates,
+                           populations::Array{<:NumberDensity,4},
+                           τ_max::Float64,
+                           target_packets::Float64)
+
+Collects radition data wavelength associated with bound-bound and
+bound-free processes. Returns data to go into structure.
+"""
+function collect_radiation_data(atmosphere::Atmosphere,
+                                atom::Atom,
+                                rates::TransitionRates,
+                                populations::Array{<:NumberDensity,4},
+                                τ_max::Float64,
+                                target_packets::Float64)
+
+    # ==================================================================
+    # GET ATMOSPHERE DATA
+    # ==================================================================
+    x = atmosphere.x
+    y = atmosphere.y
+    z = atmosphere.z
+    temperature = atmosphere.temperature
+    electron_density = atmosphere.electron_density
+    hydrogen_populations = atmosphere.hydrogen_populations
+    nz, nx, ny = size(temperature)
+    velocity_z = atmosphere.velocity_z
+
+    # ==================================================================
+    # GET ATOM DATA
+    # ==================================================================
+    line = atom.line
+    λ0 = line.λ0
+    ΔλD = atom.doppler_width
+    damping_constant = atom.damping_constant
+    nλ_bf = atom.nλ_bf
+    λ = atom.λ
+    nλ = length(λ)
+
+    # ==================================================================
+    # INITIALISE VARIABLES
+    # ==================================================================
+    boundary = Array{Int32,3}(undef, nλ, nx, ny)
+    packets = Array{Int32,4}(undef, nλ, nz, nx, ny)
+    intensity_per_packet =  Array{UnitsIntensity_λ, 1}(undef, nλ)
+
+    # ==================================================================
+    # EXTINCTION AND DESTRUCTION PROBABILITY FOR EACH WAVELENGTH
+    # ==================================================================
+    α_continuum, ε_continuum = continuum_extinction_destruction(atmosphere, atom, rates, populations, λ)
+    ε_line = line_destruction(rates)
+    α_line_constant = line_extinction_constant.(Ref(line), populations[:,:,:,1], populations[:,:,:,2])
+
+    # ==================================================================
+    # FIND OPTICAL DEPTH BOUNDARY AND PACKET DISTRIBUTION FOR EACH λ
+    # ==================================================================
+
+    # BF wavelengths
+    for l=1:2nλ_bf
+        boundary[l,:,:] = optical_depth_boundary(α_continuum[l,:,:,:], z, τ_max)
+
+        α_continuum_abs = α_continuum[l,:,:,:] .* ε_continuum[l,:,:,:]
+        packets[l,:,:,:], intensity_per_packet[l] = distribute_packets(λ[l], target_packets, x, y, z,
+                                                                      temperature, α_continuum_abs, boundary[l,:,:])
+    end
+
+    # BB wavelengths
+    for l=2nλ_bf+1:nλ
+        α = α_continuum[l,:,:,:] .+ line_extinction.(λ[l], λ0, ΔλD, damping_constant, α_line_constant, velocity_z)
+        boundary[l,:,:] = optical_depth_boundary(α, z, τ_max)
+
+        α_line = line_extinction.(λ[l], λ0, ΔλD, damping_constant, α_line_constant)
+        α_abs =  α_continuum[l,:,:,:] .* ε_continuum[l,:,:,:] .+ α_line .* ε_line
+        packets[l,:,:,:], intensity_per_packet[l] = distribute_packets(λ[l], target_packets, x, y, z,
+                                                                       temperature, α_abs, boundary[l,:,:])
+    end
+
+    # ==================================================================
+    # CHECK FOR UNVALID VALUES
+    # ==================================================================
+    @test all( Inf .> ustrip.(α_continuum) .>= 0.0 )
+    @test all( Inf .> ε_continuum .>= 0.0 )
+    @test all( Inf .> ε_line .>= 0.0 )
+    @test all( Inf .> boundary .>= 0 )
+    @test all( Inf .> ustrip.(α_line_constant) .>= 0.0 )
+    @test all( Inf .> packets .>= 0 )
+    @test all( Inf .> ustrip.(intensity_per_packet) .>= 0.0 )
+
+    return α_continuum, ε_continuum, α_line_constant, ε_line, boundary, packets, intensity_per_packet
+end
+
+# ==================================================================
+# EXTINCTION AND DESTRUCTION
+# ==================================================================
+
+"""
+    continuum_extinction_destruction(atmosphere::Atmosphere,
+                                     atom::Atom,
+                                     rates::TransitionRates,
+                                     atom_populations::Array{<:NumberDensity,4},
+                                     λ::Array{<:Unitful.Length, 1})
+
+Collect non-line extinction and destruction for all wavelengths.
+Includes H bf, H- bf and ff, H2+ bf and ff, thomson and rayleigh.
+"""
+
+function continuum_extinction_destruction(atmosphere::Atmosphere,
+                                          atom::Atom,
+                                          rates::TransitionRates,
+                                          atom_populations::Array{<:NumberDensity,4},
+                                          λ::Array{<:Unitful.Length, 1})
 
     # ==================================================================
     # EXTINCTION AND DESTRUCTION PROBABILITY FROM BACKGROUND PROCESSES
     # ==================================================================
+
     temperature = atmosphere.temperature
     electron_density = atmosphere.electron_density
     hydrogen_populations = atmosphere.hydrogen_populations
@@ -121,16 +387,21 @@ function continuum_extinction(atmosphere::Atmosphere,
     # EXTINCTION AND DESTRUCTION PROBABILITY FROM BACKGROUND PROCESSES
     # ==================================================================
     α_background = Array{PerLength, 4}(undef, 2nλ_bf, nz, nx, ny)
+    ε_background = Array{Float64,4}(undef, 2nλ_bf, nz, nx, ny)
     α_continuum = Array{PerLength, 4}(undef, nλ, nz, nx, ny)
+    ε_continuum = Array{Float64,4}(undef, nλ, nz, nx, ny)
 
     proton_density = hydrogen_populations[:,:,:,end]
-    hydrogen_ground_popuplation = hydrogen_populations[:,:,:,1]
+    hydrogen_ground_density = hydrogen_populations[:,:,:,1]
+    hydrogen_neutral_density = hydrogen_populations[:,:,:,1] .+ hydrogen_populations[:,:,:,2]
 
     # Background at bound-free wavelengths
     @Threads.threads for l=1:2*nλ_bf
-        α_abs = α_cont_abs.(λ[l], temperature, electron_density, hydrogen_ground_popuplation, proton_density)
-        α_scatt = α_cont_scatt.(λ[l], electron_density, hydrogen_ground_popuplation)
+        α_abs = α_cont_abs.(λ[l], temperature, electron_density, hydrogen_neutral_density, proton_density)
+        α_scatt = α_cont_scatt.(λ[l], electron_density, hydrogen_ground_density)
+
         α_background[l,:,:,:] = α_scatt .+ α_abs
+        ε_background[l,:,:,:] = α_abs ./ α_background[l,:,:,:]
     end
 
     # ==================================================================
@@ -138,19 +409,29 @@ function continuum_extinction(atmosphere::Atmosphere,
     # ==================================================================
 
     # Assume constant background over line profile wavelengths
-    α_abs = α_cont_abs.(λ0, temperature, electron_density, hydrogen_ground_popuplation, proton_density)
-    α_scatt =  α_cont_scatt.(λ0, electron_density, hydrogen_ground_popuplation)
+    α_abs = α_cont_abs.(λ0, temperature, electron_density, hydrogen_neutral_density, proton_density)
+    α_scatt =  α_cont_scatt.(λ0, electron_density, hydrogen_ground_density)
     α_background_line = α_abs .+ α_scatt
+    ε_background_line = α_abs ./ α_background_line
 
     @Threads.threads for l=2*nλ_bf+1:nλ
         α_continuum[l,:,:,:] = α_background_line
+        ε_continuum[l,:,:,:] = ε_background_line
     end
 
     # ==================================================================
     # EXTINCTION AND DESTRUCTION FROM ATOM BOUND-FREE
     # ==================================================================
     ν = c_0 ./ λ
-    n_eff = sqrt(E_∞ / (atom.χl - atom.χu)) |> u"J/J"
+    n_eff = sqrt(E_∞ / (atom.χu - atom.χl)) |> u"J/J"
+
+    C31 = rates.C31
+    R31 = rates.R31
+    C32 = rates.C32
+    R32 = rates.R32
+
+    ε_bf_l = C31 ./ (R31 .+ C31)
+    ε_bf_u = C32 ./ (R32 .+ C32)
 
     @Threads.threads for l=1:nλ_bf
         α_bf_l = hydrogenic_bf.(ν[l], ν[nλ_bf],
@@ -162,18 +443,32 @@ function continuum_extinction(atmosphere::Atmosphere,
                                1.0, n_eff)
 
         α_continuum[l,:,:,:] = α_background[l,:,:,:] .+ α_bf_l
+        ε_continuum[l,:,:,:] = ( ε_background[l,:,:,:] .* α_background[l,:,:,:] .+ ε_bf_l .* α_bf_l ) ./  (α_background[l,:,:,:] .+ α_bf_l)
+
         α_continuum[l+nλ_bf,:,:,:] = α_background[l+nλ_bf,:,:,:] .+ α_bf_u
+        ε_continuum[l+nλ_bf,:,:,:] = ( ε_background[l+nλ_bf,:,:,:] .* α_background[l+nλ_bf,:,:,:] .+ ε_bf_u .* α_bf_u ) ./ (α_background[l+nλ_bf,:,:,:] .+ α_bf_u)
     end
 
-    return α_continuum
+    return α_continuum, ε_continuum
 end
 
+"""
+    line_extinction(λ::Unitful.Length,
+                    λ0::Unitful.Length,
+                    ΔλD::Unitful.Length,
+                    damping_constant::PerArea,
+                    α_line_constant::Float64,
+                    v_los::Unitful.Velocity=0u"m/s")
+
+Calculate line profile and return bound-bound
+extinction contribution for a line wavelength.
+"""
 function line_extinction(λ::Unitful.Length,
                          λ0::Unitful.Length,
                          ΔλD::Unitful.Length,
                          damping_constant::PerArea,
                          α_line_constant::Float64,
-                         v_los::Unitful.Velocity=0.0u"m/s")
+                         v_los::Unitful.Velocity=0u"m/s")
 
     damping = damping_constant*λ^2 |> u"m/m"
     v = (λ - λ0 .+ λ0 .* v_los ./ c_0) ./ ΔλD
@@ -183,36 +478,60 @@ function line_extinction(λ::Unitful.Length,
     return α
 end
 
+
 """
-Compute line extinction given an `AtomicLine` struct, `profile` defined per wavelength,
-and upper and lower population densities `n_u` and `n_l`.
+    line_destruction(rates::TransitionRates)
+
+Returns line destruction probability for the two level atom.
 """
-function line_extinction_constant(line::AtomicLine, n_u::NumberDensity, n_l::NumberDensity)
+function line_destruction(rates::TransitionRates)
+    C21 = rates.C21
+    R21 = rates.R21
+    return C21 ./ (R21 .+ C21)
+end
+
+
+"""
+    line_extinction_constant(line::AtomicLine, n_l::NumberDensity, n_u::NumberDensity)
+
+Compute the line extinction constant to be
+multiplied by the profile (per length).
+"""
+function line_extinction_constant(line::AtomicLine, n_l::NumberDensity, n_u::NumberDensity)
     (h * c_0 / (4 * π * line.λ0) * (n_l * line.Bij - n_u * line.Bji)) |> u"m/m"
 end
 
 """
+    α_cont_abs(λ::Unitful.Length,
+               temperature::Unitful.Temperature,
+               electron_density::NumberDensity,
+               h_neutral_density::NumberDensity,
+               proton_density::NumberDensity)
+
 The extinction from continuum absorption processes for a given λ.
-Includes H- ff, H- bf, H ff, H2+ ff and H2+ bf.
-Credit: Tiago
+Includes H- ff, H- bf, H ff, H2+ ff and H2+ bf. Credit: Tiago
 """
 function α_cont_abs(λ::Unitful.Length,
                     temperature::Unitful.Temperature,
                     electron_density::NumberDensity,
-                    h_ground_density::NumberDensity,
+                    h_neutral_density::NumberDensity,
                     proton_density::NumberDensity)
 
-    α = Transparency.hminus_ff_stilley(λ, temperature, h_ground_density, electron_density)
-    α += Transparency.hminus_bf_geltman(λ, temperature, h_ground_density, electron_density)
+    α = Transparency.hminus_ff_stilley(λ, temperature, h_neutral_density, electron_density)
+    α += Transparency.hminus_bf_geltman(λ, temperature, h_neutral_density, electron_density)
     α += hydrogenic_ff(c_0 / λ, temperature, electron_density, proton_density, 1)
-    α += h2plus_ff(λ, temperature, h_ground_density, proton_density)
-    α += h2plus_bf(λ, temperature, h_ground_density, proton_density)
+    α += h2plus_ff(λ, temperature, h_neutral_density, proton_density)
+    α += h2plus_bf(λ, temperature, h_neutral_density, proton_density)
     return α
 end
 
 """
-The extincion from Thomson and Rayleigh scattering for a given λ.
-Credit: Tiago
+    α_cont_scatt(λ::Unitful.Length,
+                 electron_density::NumberDensity,
+                 h_ground_density::NumberDensity)
+
+The extincion from Thomson and Rayleigh scattering
+for a given λ. Credit: Tiago
 """
 function α_cont_scatt(λ::Unitful.Length,
                       electron_density::NumberDensity,
@@ -223,7 +542,12 @@ function α_cont_scatt(λ::Unitful.Length,
     return α
 end
 
+
+
 """
+    optical_depth(α::Array{<:PerLength, 3},
+                  z::Array{<:Unitful.Length, 1})
+
 Calculates the vertical optical depth of the atmosphere.
 """
 function optical_depth(α::Array{<:PerLength, 3},
@@ -247,15 +571,26 @@ function optical_depth(α::Array{<:PerLength, 3},
 end
 
 """
-Calculates the Blackbody (Planck) function per wavelength,
-for given arrays of wavelength and temperature.
-Returns monochromatic intensity.
+    blackbody_lambda(λ::Unitful.Length,
+                     temperature::Unitful.Temperature)
+
+Calculates the Blackbody (Planck) function per
+wavelength, for a given wavelength and temperature.
+Returns monochromatic intensity. Credit: Tiago
 """
 function blackbody_lambda(λ::Unitful.Length,
                           temperature::Unitful.Temperature)
     B = (2h * c_0^2) / ( λ^5 * (exp((h * c_0 / k_B) / (λ * temperature)) - 1) ) |> u"kW / m^2 / sr / nm"
 end
 
+"""
+    blackbody_lambda(λ::Array{<:Unitful.Length,1},
+                     temperature::Unitful.Temperature)
+
+Calculates the Blackbody (Planck) function per
+wavelength, for an array of wavelengths and 3D temperature.
+Returns monochromatic intensity.
+"""
 function blackbody_lambda(λ::Array{<:Unitful.Length,1},
                           temperature::Array{<:Unitful.Temperature,3})
     nλ = length(λ)
@@ -267,21 +602,4 @@ function blackbody_lambda(λ::Array{<:Unitful.Length,1},
     end
 
     return B
-end
-
-function transition_λ(χ1::Unitful.Energy, χ2::Unitful.Energy)
-    ((h * c_0) / (χ2-χ1)) |> u"nm"
-end
-
-function write_to_file(radiation::RadiationBackground)
-    h5open("../out/output.h5", "w") do file
-        write(file, "extinction_continuum", ustrip(radiation.α_continuum))
-    end
-end
-
-function write_to_file(radiation::Radiation)
-    h5open("../out/output.h5", "w") do file
-        write(file, "extinction_continuum", ustrip(radiation.α_continuum))
-        write(file, "extinction_line_constant", radiation.α_line_constant)
-    end
 end

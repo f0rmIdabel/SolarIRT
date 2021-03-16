@@ -13,148 +13,158 @@ function run()
     print("--Loading atmosphere data..................")
     atmosphere_parameters = collect_atmosphere_data()
     atmosphere = Atmosphere(atmosphere_parameters...)
-    println("Atmosphere loaded with dimensions ", size(atmosphere.temperature), ".")
+    atmosphere_size = size(atmosphere.temperature)
+    println("Atmosphere loaded with dimensions ", atmosphere_size, ".")
 
-    if test_mode()
+    if background_mode()
+        # =============================================================================
+        # READ CONFIG FILE
+        # =============================================================================
+        output_path = get_output_path()
+
         # =============================================================================
         # LOAD WAVELENGTH
         # =============================================================================
         print("--Loading wavelength.......................")
         λ = get_background_λ()
+        nλ = length(λ)
         println("Wavelength λ = ", λ, " loaded.")
 
         # =============================================================================
         # LOAD RADIATION DATA
         # =============================================================================
         print("--Loading radiation data...................")
-        radiation_parameters = collect_radiation_data(atmosphere, λ)
+        radiation_parameters = collect_radiation_data(atmosphere, λ, cut_off, target_packets)
         radiation = RadiationBackground(radiation_parameters...)
-        write_to_file(radiation) # creates new file
         println(@sprintf("Radiation loaded with %.2e packets.", sum(radiation.packets)))
+
+        # =============================================================================
+        # CREATE OUTPUT FILE
+        # =============================================================================
+        print("--Initialise output file...................")
+        create_output_file(output_path, nλ, atmosphere_size)
+        write_to_file([λ], output_path)
+        write_to_file(radiation, output_path)
+        println(@sprintf("%.1f GBs of data initialised.", how_much_data(nλ, atmosphere_size)))
 
         # =============================================================================
         # SIMULATION
         # =============================================================================
-        feautrier(atmosphere, radiation)
+        feautrier(atmosphere, radiation, output_path)
 
+        # =============================================================================
+        # END OF TEST MODE
+        # =============================================================================
     else
+        # =============================================================================
+        # READ CONFIG FILE
+        # =============================================================================
+        output_path = get_output_path()
+        max_iterations = get_max_iterations()
+        population_distribution = get_population_distribution()
+        write_rates = get_write_rates()
 
-        if iteration_mode() == "populations"
+        # =============================================================================
+        # LOAD ATOM
+        # =============================================================================
+        print("--Loading atom.............................")
+        atom_parameters = collect_atom_data(atmosphere)
+        atom = Atom(atom_parameters...)
+        nλ = atom.nλ_bb + 2*atom.nλ_bf
+        println("Atom loaded with ", nλ , " wavelengths.")
+
+        # =============================================================================
+        # LOAD INITIAL POPULATIONS
+        # =============================================================================
+        print("--Loading initial populations..............")
+        populations = collect_initial_populations(atom, atmosphere.temperature,
+                                                        atmosphere.electron_density)
+        println("Initial ", population_distribution, "-populations loaded.")
+
+        # =============================================================================
+        # CALCULATE INITIAL TRANSITION RATES
+        # =============================================================================
+        print("--Loading initial transition rates.........")
+        Bλ = blackbody_lambda(atom.λ, atmosphere.temperature)
+        rate_parameters = calculate_transition_rates(atom, atmosphere.temperature,
+                                                           atmosphere.electron_density, Bλ)
+        rates = TransitionRates(rate_parameters...)
+        println("Initial transition rates loaded.")
+
+        # =============================================================================
+        # CREATE OUTPUT FILE
+        # =============================================================================
+        print("--Initialise output file...................")
+        create_output_file(output_path, max_iterations, nλ, atmosphere_size, write_rates)
+        write_to_file(atom, output_path)
+        write_to_file(populations, 0, output_path)
+        if write_rates; write_to_file(rates, 0, output_path); end
+        println(@sprintf("%.1f GBs of data initialised.", how_much_data(nλ, atmosphere_size, max_iterations, write_rates)))
+
+        # =============================================================================
+        # RUN MCRT UNTIL POPULATIONS CONVERGE
+        # =============================================================================
+        converged_populations = false
+
+        for n=1:max_iterations
+            println("\n  ITERATION ", n, "\n", "="^91)
+            # =============================================================================
+            # LOAD RADIATION DATA WITH CURRENT POPULATIONS
+            # =============================================================================
+            print("--Loading radiation data...................")
+            radiation_parameters = collect_radiation_data(atmosphere, atom, rates, populations, cut_off, target_packets)
+            radiation = Radiation(radiation_parameters...)
+            write_to_file(radiation, n, output_path)
+            println(@sprintf("Radiation loaded with %.2e packets per λ.", sum(radiation.packets[1,:,:,:])))
 
             # =============================================================================
-            # LOAD ATOM
+            # SIMULATION
             # =============================================================================
-            print("--Loading atom.............................")
-            atom_parameters = collect_atom_data(atmosphere)
-            atom = Atom(atom_parameters...)
-            println("Atom loaded with ", atom.nλ_bb + 2*atom.nλ_bf, " wavelengths.")
+            feautrier(atmosphere, radiation, atom, n, output_path)
 
             # =============================================================================
-            # LOAD INITIAL POPULATIONS
+            # CALCULATE NEW TRANSITION RATES
             # =============================================================================
-            print("--Loading initial populations..............")
-            populations = collect_initial_populations()
-            println("Initial populations loaded.")
-
-            # =============================================================================
-            # CALCULATE INITIAL TRANSITION RATES
-            # =============================================================================
-            print("--Loading initial transition rates.........")
-            Bλ = blackbody_lambda(atom.λ, atmosphere.temperature)
-            rate_parameters = calculate_transition_rates(atom, atmosphere, populations, Bλ)
+            print("\n--Update transition rates..................")
+            Jλ = get_Jλ(output_path, n)
+            rate_parameters = calculate_transition_rates(atom, atmosphere.temperature,
+                                                               atmosphere.electron_density, Jλ)
             rates = TransitionRates(rate_parameters...)
-            println("Initial transition rates loaded.")
+            if write_rates; write_to_file(rates, n, output_path); end
+            println("Transition rates updated.")
 
             # =============================================================================
-            # RUN MCRT UNTIL POPULATIONS CONVERGE
+            # CALCULATE NEW POPULATIONS
             # =============================================================================
-            converged_populations = false
-            max_iterations = get_max_iterations()
+            print("--Update populations.......................")
+            new_populations = get_revised_populations(rates, atom.density)
+            write_to_file(new_populations, n, output_path)
+            println("Populations updated.")
 
-            for n=1:max_iterations
-                println("\n  ITERATION ", n, "\n", "="^91)
-                # =============================================================================
-                # LOAD RADIATION DATA WITH CURRENT POPULATIONS
-                # =============================================================================
-                print("--Loading radiation data...................")
-                radiation_parameters = collect_radiation_data(atmosphere, atom, populations)
-                radiation = Radiation(radiation_parameters...)
-                write_to_file(radiation) # creates new file
-                write_to_file(atom.λ)
-                println(@sprintf("Radiation loaded with %.2e packets per λ.", sum(radiation.packets[1,:,:,:])))
+            # =============================================================================
+            # CHECK POPULATION CONVERGENCE
+            # =============================================================================
+            converged, error = check_population_convergence(populations, new_populations)
+            populations = copy(new_populations)
 
-                # =============================================================================
-                # SIMULATION
-                # =============================================================================
-                feautrier(atmosphere, radiation, atom)
-
-                # =============================================================================
-                # CALCULATE NEW TRANSITION RATES
-                # =============================================================================
-                print("\n--Update transition rates..................")
-                Jλ = get_Jλ()
-                rate_parameters = calculate_transition_rates(atom, atmosphere, populations, Jλ)
-                rates = TransitionRates(rate_parameters...)
-                println("Transition rates updated.")
-
-                # =============================================================================
-                # CALCULATE NEW POPULATIONS
-                # =============================================================================
-                print("--Update populations.......................")
-                new_populations = get_revised_populations(atom, rates, populations)
-                write_to_file(new_populations)
-                println("Populations updated.")
-
-                # =============================================================================
-                # CHECK POPULATION CONVERGENCE
-                # =============================================================================
-                converged = check_population_convergence(populations, new_populations, n)
-                populations = copy(new_populations)
-
-                if converged
-                    println("--Convergence at iteration n = ", n, ". Error = ", get_error(n),"\n")
-                    break
-                else
-                    println("--No convergence. Error = ", get_error(n), ".\n")
-                end
-
-                # =============================================================================
-                # END OF ITERATION
-                # =============================================================================
+            if converged
+                println(@sprintf("--Convergence at iteration n = %d. Error = %.1e.\n", n, error))
+                cut_output_file(output_path, n, write_rates)
+                break
+            else
+                println(@sprintf("\n--No convergence. Error = %.1e.\n", error))
             end
 
-        elseif iteration_mode() == "lambda"
-
-            S = copy(B)
-            println("--Starting λ-iteration.....................\n")
-            for n=1:max_iterations
-                print("--Iteration ", n, "..............................")
-
-                feautrier(atmosphere, atom, radiation,  S)
-
-                J = get_Jλ()
-                S_new = (1.0 .- ε) .* J + ε .* B
-
-                converged = check_converging(S, S_, error, n)
-
-                if converged
-                    println("--Convergence at iteration n = ", n, ". λ-iteration finished.")
-                    S = S_new
-                    time = time[1:n,:]
-                    error = error[1:n,:]
-                    break
-                else
-                    S = S_new
-                end
-            end
-
-
-
+            # =============================================================================
+            # END OF ITERATION
+            # =============================================================================
         end
 
+        # =============================================================================
+        # END OF ATOM MODE
+        # =============================================================================
     end
 
 end
-
 
 run()

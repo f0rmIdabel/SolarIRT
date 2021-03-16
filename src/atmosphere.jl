@@ -4,17 +4,21 @@ struct Atmosphere
     z::Array{<:Unitful.Length, 1}                       # (nz + 1)
     x::Array{<:Unitful.Length, 1}                       # (nx + 1)
     y::Array{<:Unitful.Length, 1}                       # (ny + 1)
-    velocity::Array{Array{<:Unitful.Velocity, 1}, 3}    # (nx, ny, nz)
-    velocity_z::Array{<:Unitful.Velocity, 3}            # (nx, ny, nz)
+    velocity::Array{Array{<:Unitful.Velocity, 1}, 3}    # (nx, ny, nz) REMOVE
+    velocity_z::Array{<:Unitful.Velocity, 3}            # (nx, ny, nz) REMOVE
     temperature::Array{<:Unitful.Temperature, 3}        # (nx, ny, nz)
-    electron_density::Array{<:NumberDensity, 3}      # (nx, ny, nz)
-    hydrogen_populations::Array{<:NumberDensity, 4}  # (nx, ny, nz, nl)
+    electron_density::Array{<:NumberDensity, 3}         # (nx, ny, nz)
+    hydrogen_populations::Array{<:NumberDensity, 4}     # (nx, ny, nz, 3)
 end
 
-"""
-Reads and slices atmosphere parameters accoring to inputs.
-"""
 
+"""
+    collect_atmosphere_data()
+
+Reads and slices atmosphere parameters according to
+keyword.input file. Returns atmosphere dimensions, velocity,
+temperature, electron_density and hydrogen populations.
+"""
 function collect_atmosphere_data()
 
     # ===========================================================
@@ -51,15 +55,14 @@ function collect_atmosphere_data()
     # ===========================================================
     # MAKE SURE Δx, Δy > 0 and Δz < 0 (remove)
     # ===========================================================
-
     if z[1] < z[end]
         z = reverse(z)
         velocity_z = velocity_z[end:-1:1,:,:]
         velocity_x = velocity_x[end:-1:1,:,:]
         velocity_y = velocity_y[end:-1:1,:,:]
         temperature = temperature[end:-1:1,:,:]
-        χ = χ[end:-1:1,:,:]
-        ε = ε[end:-1:1,:,:]
+        electron_density = electron_density[end:-1:1,:,:]
+        hydrogen_populations = hydrogen_populations[end:-1:1,:,:,:]
     end
 
     if x[1] > x[end]
@@ -68,8 +71,8 @@ function collect_atmosphere_data()
         velocity_x = velocity_x[:,end:-1:1,:]
         velocity_y = velocity_y[:,end:-1:1,:]
         temperature = temperature[:,end:-1:1,:]
-        χ = χ[:,end:-1:1,:]
-        ε = ε[:,end:-1:1,:]
+        electron_density = electron_density[:,end:-1:1,:]
+        hydrogen_populations = hydrogen_populations[:,end:-1:1,:,:]
     end
 
 
@@ -79,10 +82,9 @@ function collect_atmosphere_data()
         velocity_x = velocity_x[:,:,end:-1:1]
         velocity_y = velocity_y[:,:,end:-1:1]
         temperature = temperature[:,:,end:-1:1]
-        χ = χ[:,:,end:-1:1]
-        ε = ε[:,:,end:-1:1]
+        electron_density = electron_density[:,:,end:-1:1]
+        hydrogen_populations = hydrogen_populations[:,:,end:-1:1,:]
     end
-
 
     # ===========================================================
     # CUT AND SLICE ATMOSPHERE BY INDEX
@@ -218,7 +220,7 @@ function collect_atmosphere_data()
     end
 
     # ===========================================================
-    # COLLECT VELOCITY IN ONE VARIABLE
+    # COLLECT VELOCITY IN ONE VARIABLE (remove)
     # ===========================================================
 
     velocity = Array{Array{<:Unitful.Velocity, 1}, 3}(undef,nz,nx,ny)
@@ -230,6 +232,19 @@ function collect_atmosphere_data()
             end
         end
     end
+
+    # ==================================================================
+    # CHECK FOR UNVALID VALUES
+    # =================================================================
+    dz = z[2:end] .- z[1:end-1]
+    dx = x[2:end] .- x[1:end-1]
+    dy = y[2:end] .- y[1:end-1]
+    @test all( ustrip.(dz) .<= 0.0 )
+    @test all( ustrip.(dx) .>= 0.0 )
+    @test all( ustrip.(dy) .>= 0.0 )
+    @test all( Inf .> ustrip.(temperature) .>= 0.0 )
+    @test all( Inf .> ustrip.(electron_density) .>= 0.0 )
+    @test all( Inf .> ustrip.(hydrogen_populations) .>= 0.0 )
 
     return z, x, y, velocity, velocity_z, temperature, electron_density, hydrogen_populations
 end

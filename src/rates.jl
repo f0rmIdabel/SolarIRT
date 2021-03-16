@@ -178,7 +178,7 @@ function σic(i::Integer,
 
     λ_edge = λ[end]
     λ3_ratio = (λ ./ λ_edge).^3
-    n_eff = sqrt(E_∞ / (atom.χl - atom.χu)) |>u"J/J" # should be χu - χl
+    n_eff = sqrt(E_∞ / (atom.χu - atom.χl)) |>u"J/J" # should be χu - χl
     charge = atom.Z
     σ_constant = (4 * e^2 / (3 * π * sqrt(3) * ε_0 * m_e * c_0^2 * R_∞)) |> u"m^2"
 
