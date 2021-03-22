@@ -212,10 +212,10 @@ function continuum_extinction_destruction(atmosphere::Atmosphere,
                                1.0, n_eff)
 
         α_continuum[l,:,:,:] = α_background[l,:,:,:] .+ α_bf_l
-        ε_continuum[l,:,:,:] = ( ε_background[l,:,:,:] .* α_background[l,:,:,:] .+ ε_bf_l .* α_bf_l ) ./  (α_background[l,:,:,:] .+ α_bf_l)
+        ε_continuum[l,:,:,:] = ( ε_background[l,:,:,:] .* α_background[l,:,:,:] .+ ε_bf_l .* α_bf_l ) ./ α_continuum[l,:,:,:]
 
         α_continuum[l+nλ_bf,:,:,:] = α_background[l+nλ_bf,:,:,:] .+ α_bf_u
-        ε_continuum[l+nλ_bf,:,:,:] = ( ε_background[l+nλ_bf,:,:,:] .* α_background[l+nλ_bf,:,:,:] .+ ε_bf_u .* α_bf_u ) ./ (α_background[l+nλ_bf,:,:,:] .+ α_bf_u)
+        ε_continuum[l+nλ_bf,:,:,:] = ( ε_background[l+nλ_bf,:,:,:] .* α_background[l+nλ_bf,:,:,:] .+ ε_bf_u .* α_bf_u ) ./ α_continuum[l+nλ_bf,:,:,:]
     end
 
     return α_continuum, ε_continuum

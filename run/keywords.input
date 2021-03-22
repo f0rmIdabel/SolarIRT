@@ -33,8 +33,8 @@ population_distribution = "LTE"
 #  If an even # is given for the bound-bound, an additional wavelength will be added      #
 #  by default.                                                                            #
 # ======================================================================================= #
-nλ_bb = 5
-nλ_bf = 2
+nλ_bb = 51
+nλ_bf = 25
 
 # ======================================================================================= #
 #  Choose how many angles to sample for.                                                  #
