@@ -1,9 +1,9 @@
+using FastGaussQuadrature
 using DelimitedFiles
 using BenchmarkTools
 using ProgressMeter
 using LinearAlgebra
 using Transparency
-#using StaticArrays
 using AtomicData
 using Unitful
 using Random
@@ -45,18 +45,19 @@ Get the path to the output file.
 function get_output_path()
 
     if background_mode()
-        path = "../out/output_" * string(ustrip.(get_background_λ())) * "nm_" * string(get_target_packets()) * "pcs.h5"
+        path = "../out/output_" * string(ustrip.(get_background_λ())) * "nm.h5"
     else
         nλ_bb, nλ_bf = get_nλ()
         nλ_bb += 1-nλ_bb%2
         nλ = 2nλ_bf + nλ_bb
+        nμ, nϕ = get_angles()
         pop_distrib = get_population_distribution()
         if pop_distrib == "LTE"
-            d = "_LTEp"
+            d = "_LTE"
         elseif pop_distrib == "zero_radiation"
             d = "_ZR"
         end
-        path = "../out/output_nw" * string(nλ) * "_" * string(get_target_packets()) * "pcs" * d * ".h5"
+        path = "../out/output_nw" * string(nλ) * "_" * "mu" * string(nμ) * "_" * d * ".h5"
     end
 
     return path
@@ -121,10 +122,10 @@ Get the radiation field from the output file.
 function get_Jλ(output_path::String, iteration::Int64)
     J = nothing
     h5open(output_path, "r") do file
-        J = read(file, "J")[iteration,:,:,:,:]
+        J = read(file, "J")[iteration,:,:,:,:]*u"kW / m^2 / sr / nm"
     end
 
-    @test all( Inf .> J .>= 0)
+    @test all( Inf .> ustrip.(J) .>= 0)
 
     return J
 end
@@ -148,6 +149,28 @@ function get_nλ()
     j = findfirst("\n", file)[end] - 1
     nλ_bf = parse(Int64, file[i:j])
     return nλ_bb, nλ_bf
+end
+
+
+"""
+    get_angles()
+
+Get the number of angles to sample for.
+"""
+function get_angles()
+    input_file = open(f->read(f, String), "../run/keywords.input")
+    i = findfirst("n_mu", input_file)[end] + 1
+    file = input_file[i:end]
+    i = findfirst("=", file)[end] + 1
+    j = findfirst("\n", file)[end] - 1
+    nμ = parse(Int64, file[i:j])
+
+    i = findfirst("n_phi", input_file)[end] + 1
+    file = input_file[i:end]
+    i = findfirst("=", file)[end] + 1
+    j = findfirst("\n", file)[end] - 1
+    nϕ = parse(Int64, file[i:j])
+    return nμ, nϕ
 end
 
 # =============================================================================
@@ -335,7 +358,7 @@ function create_output_file(output_path::String, max_iterations::Int64, nλ::Int
     nz, nx, ny = atmosphere_size
 
     h5open(output_path, "w") do file
-        write(file, "J", Array{Int32,5}(undef, max_iterations, nλ, nz, nx,ny))
+        write(file, "J", Array{Float64,5}(undef, max_iterations, nλ, nz, nx,ny))
         write(file, "time", Array{Float64,2}(undef,max_iterations, nλ))
 
         write(file, "populations", Array{Float64,5}(undef, max_iterations+1, nz, nx, ny, 3))
@@ -367,7 +390,7 @@ function create_output_file(output_path::String, nλ::Int64, atmosphere_size::Tu
     nz, nx, ny = atmosphere_size
 
     h5open(output_path, "w") do file
-        write(file, "J", Array{Int32,4}(undef, nλ, nz, nx,ny))
+        write(file, "J", Array{Float64,4}(undef, nλ, nz, nx,ny))
         write(file, "time", Array{Float64,1}(undef, nλ))
     end
 end
@@ -447,7 +470,6 @@ function how_much_data(nλ::Int64, atmosphere_size::Tuple, max_iterations::Int64
 
     nz, nx, ny = atmosphere_size
     boxes = nz*nx*ny
-    slice = nx*ny
 
     # Iteration data
     λ     = 8nλ + 8*2
@@ -456,12 +478,10 @@ function how_much_data(nλ::Int64, atmosphere_size::Tuple, max_iterations::Int64
     pops  = 8boxes*3
     rates = 8boxes*12
 
-    max_data = ( λ_data +
-               ( J_data + sim_data + rad_data) * max_iterations +
-                                      pop_data * (max_iterations + 1) ) / 1e9
+    max_data = ( λ + (J + time) * max_iterations + pops * (max_iterations + 1) ) / 1e9
 
     if write_rates
-        max_data += rate_data * (max_iterations+1)/1e9
+        max_data += rates * (max_iterations+1)/1e9
     end
 
     return max_data
@@ -477,16 +497,12 @@ function how_much_data(nλ::Int64, atmosphere_size::Tuple)
 
     nz, nx, ny = atmosphere_size
     boxes = nz*nx*ny
-    slice = nx*ny
 
-    λ_data = 8*nλ + 8*2
+    λ_data    = 8*nλ
+    J_data    = 8boxes*nλ
+    time_data = 8nλ
 
-    # Iteration data
-    J_data   = 4boxes*nλ
-    sim_data = 4nλ + 2 * 8nλ
-    rad_data = 4boxes*nλ + 4slice*nλ + 8nλ
-
-    max_data = ( λ_data +  J_data + sim_data + rad_data ) / 1e9
+    max_data = ( λ_data +  J_data + time_data ) / 1e9
 
     return max_data
 end

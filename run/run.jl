@@ -21,6 +21,7 @@ function run()
         # READ CONFIG FILE
         # =============================================================================
         output_path = get_output_path()
+        nμ, nϕ = get_angles()
 
         # =============================================================================
         # LOAD WAVELENGTH
@@ -34,9 +35,9 @@ function run()
         # LOAD RADIATION DATA
         # =============================================================================
         print("--Loading radiation data...................")
-        radiation_parameters = collect_radiation_data(atmosphere, λ, cut_off, target_packets)
+        radiation_parameters = collect_radiation_data(atmosphere, λ)
         radiation = RadiationBackground(radiation_parameters...)
-        println(@sprintf("Radiation loaded with %.2e packets.", sum(radiation.packets)))
+        println("Radiation loaded.")
 
         # =============================================================================
         # CREATE OUTPUT FILE
@@ -44,13 +45,12 @@ function run()
         print("--Initialise output file...................")
         create_output_file(output_path, nλ, atmosphere_size)
         write_to_file([λ], output_path)
-        write_to_file(radiation, output_path)
         println(@sprintf("%.1f GBs of data initialised.", how_much_data(nλ, atmosphere_size)))
 
         # =============================================================================
         # SIMULATION
         # =============================================================================
-        feautrier(atmosphere, radiation, output_path)
+        feautrier(atmosphere, radiation, λ, nμ, nϕ, output_path)
 
         # =============================================================================
         # END OF TEST MODE
@@ -63,6 +63,7 @@ function run()
         max_iterations = get_max_iterations()
         population_distribution = get_population_distribution()
         write_rates = get_write_rates()
+        nμ, nϕ = get_angles()
 
         # =============================================================================
         # LOAD ATOM
@@ -112,15 +113,14 @@ function run()
             # LOAD RADIATION DATA WITH CURRENT POPULATIONS
             # =============================================================================
             print("--Loading radiation data...................")
-            radiation_parameters = collect_radiation_data(atmosphere, atom, rates, populations, cut_off, target_packets)
+            radiation_parameters = collect_radiation_data(atmosphere, atom, rates, populations)
             radiation = Radiation(radiation_parameters...)
-            write_to_file(radiation, n, output_path)
-            println(@sprintf("Radiation loaded with %.2e packets per λ.", sum(radiation.packets[1,:,:,:])))
+            println("Radiation loaded.")
 
             # =============================================================================
             # SIMULATION
             # =============================================================================
-            feautrier(atmosphere, radiation, atom, n, output_path)
+            feautrier(atmosphere, radiation, atom, nμ, nϕ, n, output_path)
 
             # =============================================================================
             # CALCULATE NEW TRANSITION RATES

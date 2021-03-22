@@ -248,3 +248,28 @@ function collect_atmosphere_data()
 
     return z, x, y, velocity, velocity_z, temperature, electron_density, hydrogen_populations
 end
+
+
+function velocity_los(v::Array{Array{<:Unitful.Velocity,1},3}, μ::Float64, ϕ::Float64)
+
+    sinθ = sin(acos(μ))
+    cosϕ = cos(ϕ)
+    sinϕ = sin(ϕ)
+
+    unit_vector = [μ, sinθ*cosϕ, sinθ*sinϕ]
+
+    nz,nx,ny=size(v)
+    v_los = Array{Unitful.Velocity,3}(undef,nz,nx,ny)
+
+    for j=1:ny
+        for i=1:nx
+            for k=1:nz
+                v_los[k,i,j] = sum(v[k,i,j] .* unit_vector)
+            end
+        end
+    end
+
+    @test all( ustrip(c_0) .> ustrip.(v_los))
+
+    return v_los
+end

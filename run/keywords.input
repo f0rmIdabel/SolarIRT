@@ -33,8 +33,14 @@ population_distribution = "LTE"
 #  If an even # is given for the bound-bound, an additional wavelength will be added      #
 #  by default.                                                                            #
 # ======================================================================================= #
-nλ_bb = 20
-nλ_bf = 15
+nλ_bb = 5
+nλ_bf = 2
+
+# ======================================================================================= #
+#  Choose how many angles to sample for.                                                  #
+# ======================================================================================= #
+n_mu = 12
+n_phi = 4
 
 # ======================================================================================= #
 # Option to cut and slice the atmosphere data in all dimensions [nz, nx, ny].             #
@@ -49,17 +55,11 @@ step = [1, 1, 1]
 max_iterations = 10
 
 # ======================================================================================= #
-#  Option to write all transition rates to output file for each iteration.                #
-# ======================================================================================= #
-write_rates = true
-
-# ======================================================================================= #
 #  Choose between Λ-iteration "lambda" and population-iteration "populations".            #
 # ======================================================================================= #
 iteration_mode = populations
 
 # ======================================================================================= #
-#  Choose how many angles to sample for.                                                  #
+#  Option to write all transition rates to output file for each iteration.                #
 # ======================================================================================= #
-nϕ = 4
-nμ = 12
+write_rates = false
