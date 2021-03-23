@@ -157,6 +157,8 @@ function continuum_extinction_destruction(atmosphere::Atmosphere,
     # ==================================================================
     α_background = Array{PerLength, 4}(undef, 2nλ_bf, nz, nx, ny)
     ε_background = Array{Float64,4}(undef, 2nλ_bf, nz, nx, ny)
+    α_abs = Array{PerLength, 4}(undef, 2nλ_bf, nz, nx, ny)
+    α_scatt = Array{PerLength, 4}(undef, 2nλ_bf, nz, nx, ny)
     α_continuum = Array{PerLength, 4}(undef, nλ, nz, nx, ny)
     ε_continuum = Array{Float64,4}(undef, nλ, nz, nx, ny)
 
@@ -166,12 +168,14 @@ function continuum_extinction_destruction(atmosphere::Atmosphere,
 
     # Background at bound-free wavelengths
     @Threads.threads for l=1:2*nλ_bf
-        α_abs = α_cont_abs.(λ[l], temperature, electron_density, hydrogen_neutral_density, proton_density)
-        α_scatt = α_cont_scatt.(λ[l], electron_density, hydrogen_ground_density)
+        α_abs[l,:,:,:] = α_cont_abs.(λ[l], temperature, electron_density, hydrogen_neutral_density, proton_density)
+        α_scatt[l,:,:,:] = α_cont_scatt.(λ[l], electron_density, hydrogen_ground_density)
 
-        α_background[l,:,:,:] = α_scatt .+ α_abs
-        ε_background[l,:,:,:] = α_abs ./ α_background[l,:,:,:]
+        α_background[l,:,:,:] = α_scatt[l,:,:,:] .+ α_abs[l,:,:,:]
+        ε_background[l,:,:,:] = α_abs[l,:,:,:] ./ α_background[l,:,:,:]
     end
+
+    @test all(1.0  .>= ε_background .>= 0.0)
 
     # ==================================================================
     # BACKGROUND EXTINCTION AND DESTRUCTION FOR LINE
